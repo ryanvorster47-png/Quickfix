@@ -1,0 +1,305 @@
+name: Build QuickFix APK
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Create QuickFix App
+        run: |
+          mkdir -p app/src/main/assets
+          mkdir -p app/src/main/java/com/quickfix/app
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "QuickFix"
+          include ':app'
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
+          }
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.quickfix.app'
+              compileSdk 34
+              defaultConfig {
+                  applicationId 'com.quickfix.app'
+                  minSdk 23
+                  targetSdk 34
+                  versionCode 1
+                  versionName '1.0'
+              }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <application
+                  android:label="QuickFix"
+                  android:theme="@android:style/Theme.Material.NoActionBar"
+                  android:allowBackup="false">
+                  <activity android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/java/com/quickfix/app/MainActivity.java <<'EOF'
+          package com.quickfix.app;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.webkit.WebResourceRequest;
+          import android.content.Intent;
+          import android.net.Uri;
+
+          public class MainActivity extends Activity {
+              @Override
+              public void onCreate(Bundle state) {
+                  super.onCreate(state);
+                  WebView web = new WebView(this);
+                  web.getSettings().setJavaScriptEnabled(true);
+                  web.getSettings().setDomStorageEnabled(true);
+                  web.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public boolean shouldOverrideUrlLoading(
+                          WebView view, WebResourceRequest request) {
+                          Uri uri = request.getUrl();
+                          if ("https".equals(uri.getScheme())) {
+                              try {
+                                  startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                              } catch (Exception e) {}
+                              return true;
+                          }
+                          return true;
+                      }
+                  });
+                  setContentView(web);
+                  web.loadUrl("file:///android_asset/index.html");
+              }
+          }
+          EOF
+
+          cat > app/src/main/assets/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>QuickFix</title>
+          <style>
+          *{box-sizing:border-box}
+          body{background:#0b121a;color:white;font-family:Arial,sans-serif;margin:0;padding:20px 16px 40px}
+          h1{font-size:32px;margin:8px 0}
+          h2{font-size:20px}
+          p{color:#aab9c8;line-height:1.6}
+          .brand{color:#55e6a5;font-weight:bold;letter-spacing:3px}
+          input{width:100%;padding:16px;border:1px solid #344454;background:#172431;color:white;border-radius:14px;font-size:16px;margin:12px 0}
+          .tabs{display:flex;gap:8px;flex-wrap:wrap}
+          button{background:#55e6a5;color:#081810;border:0;padding:12px;border-radius:10px;font-weight:bold;font-size:14px}
+          .tabs button{flex:1}
+          .card{background:#172431;padding:18px;margin:12px 0;border-radius:16px;border:1px solid #283b49}
+          .tag{color:#55e6a5;font-size:12px;text-transform:uppercase}
+          .meta{font-size:13px;color:#aab9c8}
+          .warning{background:#382b19;color:#ffd48b;padding:12px;border-radius:10px;font-size:14px;line-height:1.5}
+          a{display:block;background:#55e6a5;color:#081810;text-decoration:none;text-align:center;padding:14px;border-radius:10px;font-weight:bold;margin:12px 0}
+          li{line-height:1.7;margin:8px 0}
+          summary{cursor:pointer;font-weight:bold;padding:12px 0}
+          .save{background:#283b49;color:white}
+          footer{text-align:center;color:#8799aa;margin-top:30px;font-size:12px}
+          </style>
+          </head>
+          <body>
+          <div class="brand">QUICKFIX</div>
+          <h1>Fix it with confidence.</h1>
+          <p>Your everyday home and car maintenance assistant.</p>
+          <input id="search" placeholder="Search a problem..." oninput="render()">
+          <div class="tabs">
+          <button onclick="filter('All')">All</button>
+          <button onclick="filter('Home')">Home</button>
+          <button onclick="filter('Auto')">Car</button>
+          <button onclick="filter('Saved')">Saved</button>
+          </div>
+          <h2 id="heading">Repair guides</h2>
+          <div id="results"></div>
+          <footer>QuickFix Home & Auto | Version 1.0</footer>
+          <script>
+          const guides=[
+          {
+          title:"Dripping tap",cat:"Home",time:"20-40 min",
+          tools:"Spanner, replacement washer",
+          steps:["Turn off the water supply.","Open the tap to release pressure.","Identify the tap type and correct replacement washer or cartridge.","Replace the worn component according to the manufacturer's instructions.","Restore water and check for leaks."],
+          warning:"Stop if the shut-off valve is damaged."
+          },
+          {
+          title:"Blocked kitchen sink",cat:"Home",time:"15 min",
+          tools:"Plunger, gloves",
+          steps:["Remove visible food and debris.","Cover the overflow opening if present.","Use a sink plunger to clear the blockage.","Flush with warm water."],
+          warning:"Never mix chemical drain cleaners."
+          },
+          {
+          title:"Running toilet",cat:"Home",time:"20 min",
+          tools:"Gloves, replacement seal",
+          steps:["Remove the cistern lid carefully.","Check whether the flush seal closes properly.","Turn off the water before replacing a worn seal.","Restore the supply and test the flush."],
+          warning:"Do not overtighten plastic fittings."
+          },
+          {
+          title:"Squeaky door",cat:"Home",time:"5 min",
+          tools:"Suitable hinge lubricant",
+          steps:["Identify the noisy hinge.","Apply a small amount of suitable lubricant.","Open and close the door several times.","Wipe away excess lubricant."],
+          warning:"Support heavy doors if removing hinges."
+          },
+          {
+          title:"Loose door handle",cat:"Home",time:"10 min",
+          tools:"Screwdriver",
+          steps:["Locate the mounting screws.","Tighten loose screws gently.","Check handle movement.","Replace damaged screws or fittings if needed."],
+          warning:"Avoid overtightening screws."
+          },
+          {
+          title:"Small wall cracks",cat:"Home",time:"30 min",
+          tools:"Filler, scraper, sandpaper",
+          steps:["Check that the crack is small and stable.","Remove loose surface material.","Apply suitable filler.","Allow to dry before sanding and painting."],
+          warning:"Large or growing cracks need professional inspection."
+          },
+          {
+          title:"Car won't start",cat:"Auto",time:"10 min",
+          tools:"Torch, optional multimeter",
+          steps:["Apply the parking brake and select park or neutral.","Check whether dashboard lights illuminate.","Listen for clicking or cranking.","Check battery terminals visually.","Arrange a battery or starter test if needed."],
+          warning:"Do not bridge starter terminals or bypass safety systems."
+          },
+          {
+          title:"Flat car battery",cat:"Auto",time:"15 min",
+          tools:"Compatible battery charger",
+          steps:["Switch off ignition and accessories.","Check for battery damage or leakage.","Consult the vehicle manual for approved charging points.","Use a compatible charger according to its instructions."],
+          warning:"Never charge a leaking, swollen or damaged battery."
+          },
+          {
+          title:"Engine overheating",cat:"Auto",time:"Inspection",
+          tools:"Vehicle manual",
+          steps:["Pull over somewhere safe.","Switch off the engine.","Allow the engine to cool completely.","Check coolant level only when cold.","Arrange repairs if coolant is low or overheating returns."],
+          warning:"Never open a hot coolant reservoir or radiator cap."
+          },
+          {
+          title:"Low tyre pressure",cat:"Auto",time:"10 min",
+          tools:"Tyre pressure gauge, pump",
+          steps:["Find the recommended pressure on the vehicle sticker.","Measure pressure when tyres are cold.","Inflate to the recommended pressure.","Check for punctures if pressure drops again."],
+          warning:"Do not drive on a flat or visibly damaged tyre."
+          },
+          {
+          title:"Checking engine oil",cat:"Auto",time:"5 min",
+          tools:"Clean cloth",
+          steps:["Park on level ground.","Switch off the engine and follow the manual's waiting period.","Remove and wipe the dipstick.","Reinsert fully and check the level.","Use only the specified oil if topping up."],
+          warning:"Never overfill the engine."
+          },
+          {
+          title:"Windscreen wiper replacement",cat:"Auto",time:"10 min",
+          tools:"Correct replacement wipers",
+          steps:["Confirm the correct blade sizes.","Use the vehicle's wiper service position if required.","Release the old blade according to its fitting type.","Install the new blade securely.","Test using washer fluid."],
+          warning:"Do not let the bare wiper arm strike the glass."
+          }
+          ];
+
+          let category="All";
+          let saved=JSON.parse(localStorage.getItem("saved")||"[]");
+
+          function filter(c){
+          category=c;
+          render();
+          }
+
+          function save(i){
+          if(saved.includes(i)){
+          saved=saved.filter(x=>x!==i);
+          }else{
+          saved.push(i);
+          }
+          localStorage.setItem("saved",JSON.stringify(saved));
+          render();
+          }
+
+          function render(){
+          const q=document.getElementById("search").value.toLowerCase();
+          document.getElementById("heading").textContent=category==="All"?"Repair guides":category+" guides";
+          let html="";
+          guides.forEach((g,i)=>{
+          if(category==="Saved"&&!saved.includes(i))return;
+          if(category!=="All"&&category!=="Saved"&&g.cat!==category)return;
+          if(!(g.title+" "+g.tools+" "+g.steps.join(" ")).toLowerCase().includes(q))return;
+          html+=`<div class="card">
+          <div class="tag">${g.cat}</div>
+          <h2>${g.title}</h2>
+          <div class="meta">Estimated time: ${g.time}</div>
+          <details>
+          <summary>View repair guide</summary>
+          <p><b>Tools:</b> ${g.tools}</p>
+          <ol>${g.steps.map(s=>"<li>"+s+"</li>").join("")}</ol>
+          <div class="warning">${g.warning}</div>
+          <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(g.title+" repair tutorial")}">Find video tutorials</a>
+          </details>
+          <button class="save" onclick="save(${i})">${saved.includes(i)?"★ Saved":"☆ Save guide"}</button>
+          </div>`;
+          });
+          document.getElementById("results").innerHTML=html||"<p>No matching guides.</p>";
+          }
+          render();
+          </script>
+          </body>
+          </html>
+          EOF
+
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickFix-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
